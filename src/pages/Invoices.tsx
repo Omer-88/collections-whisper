@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -19,61 +19,42 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge, InvoiceStatus } from "@/components/StatusBadge";
 import { Search, Download, ChevronLeft, ChevronRight } from "lucide-react";
-
-// Sample invoice data
-const invoices = [
-  {
-    id: "INV-001",
-    customer: "Acme Corp",
-    amount: 5420.00,
-    dueDate: "2024-01-15",
-    status: "paid" as InvoiceStatus,
-    pdfUrl: "https://s3.amazonaws.com/invoices/inv-001.pdf"
-  },
-  {
-    id: "INV-002",
-    customer: "TechStart Inc",
-    amount: 2890.50,
-    dueDate: "2024-01-20",
-    status: "pending" as InvoiceStatus,
-    pdfUrl: "https://s3.amazonaws.com/invoices/inv-002.pdf"
-  },
-  {
-    id: "INV-003",
-    customer: "Global Solutions",
-    amount: 7650.00,
-    dueDate: "2024-01-10",
-    status: "overdue" as InvoiceStatus,
-    pdfUrl: "https://s3.amazonaws.com/invoices/inv-003.pdf"
-  },
-  {
-    id: "INV-004",
-    customer: "DevTools LLC",
-    amount: 3240.75,
-    dueDate: "2024-01-25",
-    status: "pending" as InvoiceStatus,
-    pdfUrl: "https://s3.amazonaws.com/invoices/inv-004.pdf"
-  },
-  {
-    id: "INV-005",
-    customer: "Enterprise Systems",
-    amount: 9870.00,
-    dueDate: "2024-01-12",
-    status: "overdue" as InvoiceStatus,
-    pdfUrl: "https://s3.amazonaws.com/invoices/inv-005.pdf"
-  },
-];
+import { invoiceApi, Invoice } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Invoices() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
   const itemsPerPage = 10;
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      try {
+        const data = await invoiceApi.getAll();
+        setInvoices(data);
+      } catch (error) {
+        console.error("Failed to fetch invoices:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load invoices",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInvoices();
+  }, [toast]);
 
   const filteredInvoices = invoices.filter((invoice) => {
     const matchesSearch = 
-      invoice.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.customer.toLowerCase().includes(searchTerm.toLowerCase());
+      invoice.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      invoice.customer_name.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === "all" || invoice.status === statusFilter;
     
@@ -146,48 +127,62 @@ export default function Invoices() {
           <CardTitle>Invoice List</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice #</TableHead>
-                <TableHead>Customer Name</TableHead>
-                <TableHead>Amount (USD)</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {currentInvoices.map((invoice) => (
-                <TableRow key={invoice.id}>
-                  <TableCell className="font-medium">{invoice.id}</TableCell>
-                  <TableCell>{invoice.customer}</TableCell>
-                  <TableCell>{formatCurrency(invoice.amount)}</TableCell>
-                  <TableCell>{formatDate(invoice.dueDate)}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={invoice.status} />
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      asChild
-                    >
-                      <a
-                        href={invoice.pdfUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center space-x-1"
-                      >
-                        <Download className="h-4 w-4" />
-                        <span>PDF</span>
-                      </a>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          {loading ? (
+            <div className="text-center py-8">Loading invoices...</div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Invoice #</TableHead>
+                    <TableHead>Customer Name</TableHead>
+                    <TableHead>Amount (USD)</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {currentInvoices.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        {invoices.length === 0 ? "No invoices found" : "No invoices match your search criteria"}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    currentInvoices.map((invoice) => (
+                      <TableRow key={invoice.id}>
+                        <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
+                        <TableCell>{invoice.customer_name}</TableCell>
+                        <TableCell>{formatCurrency(invoice.amount)}</TableCell>
+                        <TableCell>{formatDate(invoice.due_date)}</TableCell>
+                        <TableCell>
+                          <StatusBadge status={invoice.status as InvoiceStatus} />
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                          >
+                            <a
+                              href={`https://s3.amazonaws.com/invoices/${invoice.invoice_number}.pdf`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center space-x-1"
+                            >
+                              <Download className="h-4 w-4" />
+                              <span>PDF</span>
+                            </a>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </>
+          )}
 
           {/* Pagination */}
           <div className="flex items-center justify-between space-x-2 py-4">

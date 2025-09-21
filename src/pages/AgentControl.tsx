@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Bot, Play, Clock, CheckCircle, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { invoiceApi, emailApi } from "@/lib/api";
 
 // Sample agent log data
 const agentLogs = [
@@ -57,24 +58,71 @@ export default function AgentControl() {
       description: "Processing invoices and generating follow-ups...",
     });
 
-    // Simulate agent processing
-    setTimeout(() => {
+    try {
+      // Fetch current invoices to analyze
+      const invoices = await invoiceApi.getAll();
+      const overdueInvoices = invoices.filter(inv => inv.status === "overdue");
+      const pendingInvoices = invoices.filter(inv => inv.status === "pending");
+      
+      let emailsSent = 0;
+      let escalationsCreated = 0;
+
+      // Send reminders for overdue invoices
+      for (const invoice of overdueInvoices.slice(0, 3)) { // Limit to 3 for demo
+        try {
+          await emailApi.send({
+            customer_email: invoice.customer_email,
+            invoice_number: invoice.invoice_number,
+            amount: invoice.amount.toString(),
+            due_date: invoice.due_date,
+            tone: "urgent"
+          });
+          emailsSent++;
+        } catch (error) {
+          console.error("Failed to send email for invoice:", invoice.invoice_number, error);
+        }
+      }
+
+      // Send gentle reminders for pending invoices
+      for (const invoice of pendingInvoices.slice(0, 2)) { // Limit to 2 for demo
+        try {
+          await emailApi.send({
+            customer_email: invoice.customer_email,
+            invoice_number: invoice.invoice_number,
+            amount: invoice.amount.toString(),
+            due_date: invoice.due_date,
+            tone: "gentle"
+          });
+          emailsSent++;
+        } catch (error) {
+          console.error("Failed to send email for invoice:", invoice.invoice_number, error);
+        }
+      }
+
       const newLog = {
         id: logs.length + 1,
         timestamp: new Date().toISOString(),
         action: "Completed automated invoice review",
         type: "analysis",
-        details: "Processed 12 invoices, sent 4 reminders, escalated 2 cases"
+        details: `Processed ${invoices.length} invoices, sent ${emailsSent} reminders, escalated ${escalationsCreated} cases`
       };
       
       setLogs(prev => [newLog, ...prev]);
-      setIsRunning(false);
       
       toast({
         title: "AI Agent Completed",
-        description: "All tasks completed successfully!",
+        description: `Sent ${emailsSent} reminder emails successfully!`,
       });
-    }, 3000);
+    } catch (error) {
+      console.error("Agent run failed:", error);
+      toast({
+        title: "Agent Error",
+        description: "Failed to complete some tasks. Check console for details.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   const formatDateTime = (dateTimeString: string) => {
